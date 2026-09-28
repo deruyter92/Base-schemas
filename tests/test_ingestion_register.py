@@ -109,7 +109,7 @@ def _register_mocks(**tables):
     conn.transaction = nullcontext()
     session_part = MagicMock()
     stack = ExitStack()
-    stack.enter_context(patch.object(session_reg.Session, "connection", conn))
+    stack.enter_context(patch.object(session_reg.Session, "_connection", conn))
     sess_ins = stack.enter_context(patch.object(session_reg.Session, "insert1"))
     stack.enter_context(patch.object(session_reg.Session, "Subject", session_part))
     upsert = stack.enter_context(patch.object(session_reg, "upsert_session_row_meta"))
