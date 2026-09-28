@@ -63,7 +63,7 @@ def test_subject_task_and_multi_subject_session(dj_connection):
     from base_schemas.schemas.scene.subject import Subject, SubjectKind
     from base_schemas.schemas.scene.task import Task
 
-    lab_key = {"lab_id": "spinetest"}
+    lab_key = {"lab_id": "spine"}
     Lab.insert1(
         {**lab_key, "lab_name": "Spine Lab", "institution": "Test U"},
         skip_duplicates=True,
