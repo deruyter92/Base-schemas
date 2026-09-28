@@ -6,7 +6,7 @@ import uuid
 from collections.abc import Sequence
 from datetime import date
 
-from base_schemas.core.config import load_settings
+from base_schemas.core.config import deployment_row_from_settings
 from base_schemas.core.types import DjKey, DjRow
 from base_schemas.ingestion.register.session_meta import upsert_session_row_meta
 from base_schemas.ingestion.register.subject import register_subject
@@ -20,17 +20,6 @@ from base_schemas.schemas.scene.task import Task
 def new_session_id() -> str:
     """Return a new opaque ``session_id`` (UUID4 hex, 32 chars)."""
     return uuid.uuid4().hex
-
-
-def _build_deployment_row_from_settings() -> DjRow[Deployment]:
-    """Build a deployment row from Settings."""
-    settings = load_settings()
-    if not settings.deployment_id:
-        raise ValueError("deployment is required: pass deployment={...} or set SCENE_DEPLOYMENT_ID")
-    return {
-        "deployment_id": settings.deployment_id,
-        "label": settings.deployment_label,
-    }
 
 
 def _insert_session_bundle(
@@ -113,7 +102,7 @@ def register_session(
     if not name:
         raise ValueError("session_name must be a non-empty string")
 
-    deployment_row = deployment if deployment is not None else _build_deployment_row_from_settings()
+    deployment_row = deployment if deployment is not None else deployment_row_from_settings()
 
     with Session.connection.transaction:
         return _insert_session_bundle(
@@ -168,7 +157,7 @@ def register_session_with_new_subjects(
     if not subjects:
         raise ValueError("subjects must be a non-empty sequence of subject rows")
 
-    deployment_row = deployment if deployment is not None else _build_deployment_row_from_settings()
+    deployment_row = deployment if deployment is not None else deployment_row_from_settings()
 
     with Session.connection.transaction:
         subject_keys = [register_subject(row, skip_duplicates=skip_duplicates) for row in subjects]

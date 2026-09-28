@@ -1,7 +1,7 @@
 """Shared core helpers (config + registry / versioning / hash / types)."""
 
 from base_schemas.core.access_markers import AccessRole, mark_access_role
-from base_schemas.core.config import Settings, load_settings
+from base_schemas.core.config import Settings, deployment_row_from_settings, load_settings
 from base_schemas.core.hash import content_hash
 from base_schemas.core.registry import SCENE_REGISTRY, SchemaRegistry, activate_schema
 from base_schemas.core.types import DjKey, DjRow
@@ -28,6 +28,7 @@ __all__ = [
     "assert_schema_compatible",
     "check_schema_version",
     "content_hash",
+    "deployment_row_from_settings",
     "ensure_schema_version",
     "get_db_schema_version",
     "load_settings",

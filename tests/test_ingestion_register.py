@@ -7,6 +7,7 @@ from datetime import date
 from unittest.mock import MagicMock, patch
 
 import pytest
+from base_schemas.core.config import deployment_row_from_settings
 from base_schemas.core.hash import content_hash
 from base_schemas.ingestion.register import session as session_reg
 from base_schemas.ingestion.register import session_meta as meta_reg
@@ -22,13 +23,13 @@ def test_new_session_id_is_uuid4_hex():
 def test_build_deployment_row_from_settings_requires_env(monkeypatch):
     monkeypatch.delenv("SCENE_DEPLOYMENT_ID", raising=False)
     with pytest.raises(ValueError, match="SCENE_DEPLOYMENT_ID"):
-        session_reg._build_deployment_row_from_settings()
+        deployment_row_from_settings()
 
 
 def test_build_deployment_row_from_settings(monkeypatch):
     monkeypatch.setenv("SCENE_DEPLOYMENT_ID", "from-env")
     monkeypatch.setenv("SCENE_DEPLOYMENT_LABEL", "Env label")
-    assert session_reg._build_deployment_row_from_settings() == {
+    assert deployment_row_from_settings() == {
         "deployment_id": "from-env",
         "label": "Env label",
     }
