@@ -5,12 +5,14 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 from datetime import date
+from typing import Any
 
 from base_schemas.core.config import deployment_row_from_settings
 from base_schemas.core.types import DjKey, DjRow
-from base_schemas.ingestion.register.session_meta import upsert_session_row_meta
+from base_schemas.ingestion.provenance.row_meta import insert_row_meta
 from base_schemas.ingestion.register.subject import register_subject
 from base_schemas.schemas.provenance.deployment import Deployment
+from base_schemas.schemas.provenance.row_meta import SessionRowMeta
 from base_schemas.schemas.scene.lab import Lab
 from base_schemas.schemas.scene.session import Experimenter, Session
 from base_schemas.schemas.scene.subject import Subject
@@ -20,6 +22,40 @@ from base_schemas.schemas.scene.task import Task
 def new_session_id() -> str:
     """Return a new opaque ``session_id`` (UUID4 hex, 32 chars)."""
     return uuid.uuid4().hex
+
+
+def session_etag_payload(
+    session: dict[str, Any],
+    subject_ids: Sequence[str] = (),
+) -> dict[str, Any]:
+    """Non-key session fields + subjects that should affect ``content_hash``."""
+    return {
+        "session_date": str(session["session_date"]),
+        "session_name": session["session_name"],
+        "task_name": session.get("task_name"),
+        "experimenter_name": session.get("experimenter_name"),
+        "subject_ids": list(subject_ids),
+    }
+
+
+def _upsert_session_row_meta(
+    session_key: DjKey[Session],
+    session: dict[str, Any],
+    *,
+    deployment_key: DjKey[Deployment],
+    subject_ids: Sequence[str] = (),
+    writer_version: str | None = None,
+) -> None:
+    """Insert or replace ``SessionRowMeta`` for a session."""
+    insert_row_meta(
+        row_key=session_key,
+        row_meta_table=SessionRowMeta,
+        payload=session_etag_payload(session, subject_ids),
+        deployment_key=deployment_key,
+        writer_version=writer_version,
+        replace=True,
+        skip_duplicates=False,
+    )
 
 
 def _insert_session_bundle(
@@ -54,7 +90,7 @@ def _insert_session_bundle(
             [{**session_key, "subject_id": sid} for sid in subject_ids],
             skip_duplicates=skip_duplicates,
         )
-    upsert_session_row_meta(
+    _upsert_session_row_meta(
         session_key,
         session,
         deployment_key=deployment_key,

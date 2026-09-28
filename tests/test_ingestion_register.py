@@ -9,8 +9,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from base_schemas.core.config import deployment_row_from_settings
 from base_schemas.core.hash import content_hash
+from base_schemas.ingestion.provenance.ingestion_version import SCENE_WRITER_VERSION
 from base_schemas.ingestion.register import session as session_reg
-from base_schemas.ingestion.register import session_meta as meta_reg
 
 
 def test_new_session_id_is_uuid4_hex():
@@ -45,7 +45,7 @@ def test_session_etag_payload_includes_lookups_and_subjects():
         "experimenter_name": "alice",
     }
     subject_ids = ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
-    payload = meta_reg.session_etag_payload(session, subject_ids)
+    payload = session_reg.session_etag_payload(session, subject_ids)
     assert payload == {
         "session_date": "2026-05-01",
         "session_name": "morning run",
@@ -66,8 +66,8 @@ def test_upsert_session_row_meta_writes_version_hash_and_deployment():
         "experimenter_name": None,
     }
     subject_ids = ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
-    with patch.object(meta_reg.SessionRowMeta, "insert1") as ins:
-        meta_reg.upsert_session_row_meta(
+    with patch.object(session_reg.SessionRowMeta, "insert1") as ins:
+        session_reg._upsert_session_row_meta(
             key,
             session,
             deployment_key={"deployment_id": "dep1"},
@@ -76,16 +76,18 @@ def test_upsert_session_row_meta_writes_version_hash_and_deployment():
 
     row = ins.call_args.args[0]
     assert row["deployment_id"] == "dep1"
-    assert row["ingestion_version"] == meta_reg.SCENE_WRITER_VERSION
-    assert row["content_hash"] == content_hash(meta_reg.session_etag_payload(session, subject_ids))
+    assert row["ingestion_version"] == SCENE_WRITER_VERSION
+    assert row["content_hash"] == content_hash(
+        session_reg.session_etag_payload(session, subject_ids)
+    )
     assert ins.call_args.kwargs["replace"] is True
 
 
 def test_upsert_session_row_meta_honors_writer_version_override():
     key = {"lab_id": "mlai", "session_id": "x" * 32}
     session = {**key, "session_name": "s", "session_date": date(2026, 1, 1)}
-    with patch.object(meta_reg.SessionRowMeta, "insert1") as ins:
-        meta_reg.upsert_session_row_meta(
+    with patch.object(session_reg.SessionRowMeta, "insert1") as ins:
+        session_reg._upsert_session_row_meta(
             key,
             session,
             deployment_key={"deployment_id": "dep1"},
@@ -113,7 +115,7 @@ def _register_mocks(**tables):
     stack.enter_context(patch.object(session_reg.Session, "_connection", conn))
     sess_ins = stack.enter_context(patch.object(session_reg.Session, "insert1"))
     stack.enter_context(patch.object(session_reg.Session, "Subject", session_part))
-    upsert = stack.enter_context(patch.object(session_reg, "upsert_session_row_meta"))
+    upsert = stack.enter_context(patch.object(session_reg, "_upsert_session_row_meta"))
     for name, table in tables.items():
         stack.enter_context(patch.object(session_reg, name, table))
     return stack, sess_ins, session_part, upsert

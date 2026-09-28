@@ -115,7 +115,7 @@ def test_subject_task_and_multi_subject_session(dj_connection):
 def test_register_session_mints_id_and_stores_name(dj_connection, monkeypatch):
     from base_schemas.core.hash import content_hash
     from base_schemas.ingestion import SCENE_WRITER_VERSION, register_session
-    from base_schemas.ingestion.register.session_meta import session_etag_payload
+    from base_schemas.ingestion.register.session import session_etag_payload
     from base_schemas.schemas.provenance.row_meta import SessionRowMeta
     from base_schemas.schemas.scene.lab import Lab
     from base_schemas.schemas.scene.session import Experimenter, Session
