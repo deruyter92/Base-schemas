@@ -2,8 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
-from base_schemas.admin import lab as lab_admin
-from base_schemas.admin import task as task_admin
+from base_schemas.ingestion.admin import lab as lab_admin
+from base_schemas.ingestion.admin import task as task_admin
 
 
 def test_ensure_lab_inserts_and_returns_key():
