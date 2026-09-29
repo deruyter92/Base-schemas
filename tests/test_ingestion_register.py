@@ -237,15 +237,24 @@ def test_new_subject_id_is_uuid4_hex():
     int(sid, 16)
 
 
-def test_register_subject_inserts_and_returns_key():
+def test_register_subject_inserts_and_returns_key(monkeypatch):
     from base_schemas.ingestion.register import subject as subject_reg
 
+    monkeypatch.setenv("SCENE_DEPLOYMENT_ID", "from-env")
+    monkeypatch.setenv("SCENE_DEPLOYMENT_LABEL", "Env")
     row = {"subject_id": "a" * 32, "subject_kind": "mouse"}
     table = MagicMock()
     table.primary_key = ["subject_id"]
-    with patch.object(subject_reg, "Subject", table):
+    deployment = MagicMock()
+    deployment.primary_key = ["deployment_id"]
+    with patch.object(subject_reg, "Subject", table), patch.object(
+        subject_reg, "Deployment", deployment
+    ), patch.object(subject_reg, "insert_row_meta") as meta:
+        meta.return_value = {"subject_id": "a" * 32}
         key = subject_reg.register_subject(row)
     table.insert1.assert_called_once_with(row, skip_duplicates=True)
+    meta.assert_called_once()
+    assert meta.call_args.kwargs["row_key"] == {"subject_id": "a" * 32}
     assert key == {"subject_id": "a" * 32}
 
 
@@ -285,8 +294,18 @@ def test_register_session_with_new_subjects_inserts_then_session(monkeypatch):
 
     assert key == session_key
     assert reg_sub.call_count == 2
-    reg_sub.assert_any_call(subjects[0], skip_duplicates=True)
-    reg_sub.assert_any_call(subjects[1], skip_duplicates=True)
+    reg_sub.assert_any_call(
+        subjects[0],
+        deployment={"deployment_id": "from-env", "label": ""},
+        skip_duplicates=True,
+        manage_transaction=False,
+    )
+    reg_sub.assert_any_call(
+        subjects[1],
+        deployment={"deployment_id": "from-env", "label": ""},
+        skip_duplicates=True,
+        manage_transaction=False,
+    )
     part_rows = session_part.insert.call_args.args[0]
     assert [r["subject_id"] for r in part_rows] == ["a" * 32, "b" * 32]
     assert upsert_meta.call_args.kwargs["subject_ids"] == ["a" * 32, "b" * 32]

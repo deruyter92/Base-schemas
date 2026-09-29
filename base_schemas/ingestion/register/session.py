@@ -196,7 +196,15 @@ def register_session_with_new_subjects(
     deployment_row = deployment if deployment is not None else deployment_row_from_settings()
 
     with Session.connection.transaction:
-        subject_keys = [register_subject(row, skip_duplicates=skip_duplicates) for row in subjects]
+        subject_keys = [
+            register_subject(
+                row,
+                deployment=deployment_row,
+                skip_duplicates=skip_duplicates,
+                manage_transaction=False,
+            )
+            for row in subjects
+        ]
         return _insert_session_bundle(
             lab=lab,
             name=name,
