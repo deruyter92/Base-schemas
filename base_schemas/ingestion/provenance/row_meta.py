@@ -89,7 +89,7 @@ def insert_tracked_row(
 
     with atomic(tracked_table.connection):
         if not (tracked_table & row_key):
-            Deployment.insert1(deployment, skip_duplicates=True)
+            _ensure_deployment(deployment)
             tracked_table.insert1(row)
             _insert_parts(parts, row_key)
             row_meta_table.insert1(stamp)
@@ -105,7 +105,7 @@ def insert_tracked_row(
         if not overwrite:
             return row_key
 
-        Deployment.insert1(deployment, skip_duplicates=True)
+        _ensure_deployment(deployment)
         tracked_table.update1(row)
         for part_table in parts or {}:
             (part_table & row_key).delete_quick()
@@ -115,6 +115,27 @@ def insert_tracked_row(
         else:
             row_meta_table.update1(stamp)
         return row_key
+
+
+def _ensure_deployment(deployment: DjRow[Deployment]) -> None:
+    """Insert the Deployment row when missing; warn when the stored label differs.
+
+    ``Deployment`` is append-only (``SyncAuthority.SHARED``): the label is set by
+    the first write and never overwritten here.
+    """
+    stored = Deployment & {name: deployment[name] for name in Deployment.primary_key}
+    if not stored:
+        Deployment.insert1(deployment)
+        return
+    stored_label = stored.fetch1("label")
+    new_label = deployment.get("label", "")
+    if new_label != stored_label:
+        warnings.warn(
+            f"Deployment {deployment['deployment_id']!r} keeps its stored label "
+            f"{stored_label!r}; ignoring {new_label!r} (update the Deployment row to change it)",
+            UserWarning,
+            stacklevel=4,
+        )
 
 
 def _insert_parts(parts: Mapping[type[dj.Part], Sequence[DjRow]] | None, row_key: DjKey) -> None:

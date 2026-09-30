@@ -242,6 +242,7 @@ def test_register_subjects_and_session_in_one_transaction(dj_connection, monkeyp
     from base_schemas.schemas.scene.subject import Subject
 
     monkeypatch.setenv("SCENE_DEPLOYMENT_ID", "test-local")
+    monkeypatch.setenv("SCENE_DEPLOYMENT_LABEL", "test")
     lab_key = {"lab_id": "txnlab"}
     Lab.insert1({**lab_key, "lab_name": "Txn Lab", "institution": "Test U"}, skip_duplicates=True)
 

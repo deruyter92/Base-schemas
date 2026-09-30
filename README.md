@@ -38,7 +38,8 @@ The id is a stable, opaque token: pick a short slug that names the lab and the
 role of the database, e.g. ``mlai-prod`` for the production database of the
 Mathis Lab of Adaptive Intelligence, or ``mlai-dev-jaap`` for a private
 development copy. Do not derive it from a hostname or the schema prefix; those
-may change, the id must not. The label is free text for humans and may change.
+may change, the id must not. The label is free text for humans. It is stored
+by the first write and should not be changed later (ignored with a warning).
 
 ### Admin catalog tables
 

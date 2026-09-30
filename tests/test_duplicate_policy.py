@@ -274,3 +274,20 @@ def test_parts_untouched_when_row_is_kept(deployment_table, policy):
     part = _FakePart([{**_LAB_KEY, "member": "old"}])
     _insert(meta, policy, parts={part: [{"member": "new"}]})
     assert part.rows == [{**_LAB_KEY, "member": "old"}]
+
+
+def test_existing_deployment_with_same_label_is_left_alone(deployment_table):
+    deployment_table.rows[("dep1",)] = dict(_DEPLOYMENT)
+    _, meta = _tables(lab_exists=False)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        _insert(meta, DuplicatePolicy.REJECT)
+    assert [name for name, _ in deployment_table.calls] == []
+
+
+def test_existing_deployment_with_other_label_warns_and_keeps_label(deployment_table):
+    deployment_table.rows[("dep1",)] = {**_DEPLOYMENT, "label": "Old label"}
+    _, meta = _tables(lab_exists=False)
+    with pytest.warns(UserWarning, match="keeps its stored label 'Old label'"):
+        _insert(meta, DuplicatePolicy.REJECT)
+    assert deployment_table.rows[("dep1",)]["label"] == "Old label"
