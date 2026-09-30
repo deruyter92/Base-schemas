@@ -8,8 +8,10 @@ Read them with ``sync_authority_of`` / ``write_role_of``.
 
 - ``CENTRAL``: the central database (consortium catalogs such as ``Lab``).
   Site -> central verifies and central wins; central -> site overwrites.
-- ``ORIGIN``: the deployment named in the row's provenance stamp (acquired
-  data). That deployment's copy wins; other sites' rows are skipped.
+- ``ORIGIN``: the site that acquired the data (subjects, sessions). The site's
+  copy wins; central does not write these tables (enforced by grants, see
+  ``WriteRole``). The row's provenance stamp records the last writer, not an
+  owner.
 - ``SHARED``: no owner; append-only identities (``Deployment``). Either
   direction inserts missing rows and never overwrites.
 

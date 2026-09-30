@@ -129,10 +129,9 @@ Two optional markers record intent; they enforce nothing. Read them with
 ``sync_authority_of`` and ``write_role_of``.
 
 ``SyncAuthority`` names which database holds the truth: ``CENTRAL`` (consortium
-catalogs; central wins a conflict), ``ORIGIN`` (the deployment in the row's
-stamp wins), ``SHARED`` (append-only, either direction inserts and never
-overwrites; ``Deployment``). Unmarked means ``ORIGIN``. ``Deployment`` is
-``SHARED``.
+catalogs; central database has authority), ``ORIGIN`` (the site that acquired the
+data has authority), ``SHARED`` (append-only, either direction inserts and never
+overwrites).
 
 ``WriteRole`` restricts INSERT: ``ADMIN`` or ``ACQUISITION``, and a marker
 admits only that role. No marker means unrestricted. ``Lab`` and ``Task`` are
