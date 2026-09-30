@@ -39,10 +39,9 @@ def test_make_schema_eager_when_auto_activate(monkeypatch, registry):
     monkeypatch.setenv("DJ_SCHEMA_PREFIX", "unit_")
     monkeypatch.setattr(registry_mod.dj, "Schema", FakeSchema)
 
-    schema = registry.make_schema("exp", context={"x": 1}, create_tables=False)
+    schema = registry.make_schema("exp", create_tables=False)
     assert schema.database == "unit_exp"
-    assert schema.kwargs["create_tables"] is False
-    assert schema.kwargs["add_objects"] == {"x": 1}
+    assert schema.kwargs == {"create_tables": False}  # no add_objects: FKs resolve via imports
 
 
 def test_make_schema_rejects_empty_suffix(registry):
@@ -54,14 +53,20 @@ def test_make_schema_reuses_same_suffix(monkeypatch, registry):
     monkeypatch.delenv("AUTO_ACTIVATE", raising=False)
     monkeypatch.setattr(registry_mod.dj, "Schema", FakeSchema)
 
-    lab = object()
-    first = registry.make_schema("experiment", context={"Lab": lab}, create_tables=False)
-    second = registry.make_schema("experiment", context={"Session": object})
-    assert second is first
+    first = registry.make_schema("experiment", create_tables=False)
+    assert registry.make_schema("experiment") is first
+    assert registry.make_schema("experiment", create_tables=False) is first
     assert list(registry.schemas) == ["experiment"]
     assert registry.get("experiment") is first
-    assert registry._entries["experiment"].context == {"Lab": lab}
-    assert registry._entries["experiment"].create_tables is False
+
+
+def test_make_schema_rejects_conflicting_create_tables(monkeypatch, registry):
+    monkeypatch.delenv("AUTO_ACTIVATE", raising=False)
+    monkeypatch.setattr(registry_mod.dj, "Schema", FakeSchema)
+
+    registry.make_schema("experiment", create_tables=False)
+    with pytest.raises(ValueError, match="create_tables=False"):
+        registry.make_schema("experiment", create_tables=True)
 
 
 def test_registry_inspection(monkeypatch, registry):
@@ -78,15 +83,14 @@ def test_registry_inspection(monkeypatch, registry):
     assert registry.get("experiment") is schema
 
 
-def test_activate_uses_registered_suffix_and_context(monkeypatch, registry):
+def test_activate_uses_registered_suffix_and_create_tables(monkeypatch, registry):
     monkeypatch.setenv("DJ_SCHEMA_PREFIX", "dev_")
     monkeypatch.delenv("AUTO_ACTIVATE", raising=False)
     monkeypatch.setattr(registry_mod.dj, "Schema", FakeSchema)
 
-    schema = registry.make_schema("experiment", context={"Lab": object}, create_tables=False)
+    schema = registry.make_schema("experiment", create_tables=False)
     registry.activate("experiment")
     assert schema.database == "dev_experiment"
-    assert "Lab" in schema.kwargs["add_objects"]
     assert schema.kwargs["create_tables"] is False
 
 
@@ -98,9 +102,8 @@ def test_activate_unknown_suffix_raises(registry):
 def test_activate_schema_binds_any_schema(monkeypatch):
     monkeypatch.setenv("DJ_SCHEMA_PREFIX", "dev_")
     schema = FakeSchema()
-    registry_mod.activate_schema(schema, "experiment", context={"Lab": object}, create_tables=False)
+    registry_mod.activate_schema(schema, "experiment", create_tables=False)
     assert schema.database == "dev_experiment"
-    assert "Lab" in schema.kwargs["add_objects"]
     assert schema.kwargs["create_tables"] is False
 
 

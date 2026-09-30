@@ -3,11 +3,15 @@
 Schemas created via ``SchemaRegistry.make_schema`` stay unbound unless
 ``AUTO_ACTIVATE`` is set. Bind later with ``activate`` / ``activate_all``, or
 call ``activate_schema`` for any ``dj.Schema`` with an explicit suffix.
+
+Foreign keys (``-> Lab``) resolve through the names imported in the module that
+defines the table, as usual in DataJoint. The registry deliberately does not
+inject extra names: shared tables must reference the shared tables, and labs
+extend them by referencing them from their own schemas.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -20,7 +24,6 @@ def activate_schema(
     schema: dj.Schema,
     suffix: str,
     *,
-    context: Mapping[str, Any] | None = None,
     create_tables: bool = True,
     connection: Any | None = None,
 ) -> dj.Schema:
@@ -29,7 +32,6 @@ def activate_schema(
     Args:
         schema: Unbound (or rebound) ``dj.Schema`` instance.
         suffix: Logical schema name without prefix (e.g. ``"experiment"``).
-        context: Optional FK resolution mapping passed as ``add_objects``.
         create_tables: Forwarded to ``schema.activate``.
         connection: Optional DataJoint connection forwarded to ``activate``.
 
@@ -46,8 +48,6 @@ def activate_schema(
     kwargs: dict[str, Any] = {"create_tables": create_tables}
     if connection is not None:
         kwargs["connection"] = connection
-    if context is not None:
-        kwargs["add_objects"] = dict(context)
     schema.activate(name, **kwargs)
     return schema
 
@@ -57,7 +57,6 @@ class _Entry:
     """One registered schema and the defaults used when activating it."""
 
     schema: dj.Schema
-    context: dict[str, Any] | None = None
     create_tables: bool = True
 
 
@@ -65,12 +64,12 @@ class SchemaRegistry:
     """Track schemas created via ``make_schema`` and bind them on demand.
 
     Lazy by default: ``make_schema`` returns an unbound ``dj.Schema`` but
-    remembers the logical suffix (and optional FK context) so ``activate`` /
+    remembers the logical suffix (and ``create_tables``) so ``activate`` /
     ``activate_all`` can bind without re-stating the name. When
     ``AUTO_ACTIVATE`` is set, ``make_schema`` binds immediately.
 
     Entries are keyed by suffix: repeated ``make_schema`` calls with the same
-    name return the existing instance (first registration wins). Inspect with
+    name return the existing instance; a conflicting ``create_tables`` raises. Inspect with
     ``get`` or the ``schemas`` property.
 
     Attributes:
@@ -99,54 +98,50 @@ class SchemaRegistry:
     def make_schema(
         self,
         suffix: str,
-        context: Mapping[str, Any] | None = None,
         *,
-        create_tables: bool = True,
+        create_tables: bool | None = None,
     ) -> dj.Schema:
         """Create a DataJoint schema, unbound unless ``AUTO_ACTIVATE`` is set.
 
-        Repeated calls with the same ``suffix`` return the same instance;
-        ``context`` / ``create_tables`` from the first call are kept.
+        Repeated calls with the same ``suffix`` return the same instance. A
+        repeated call that passes a different ``create_tables`` raises.
 
         Args:
             suffix: Logical name without prefix (e.g. ``"experiment"``).
-            context: Optional FK resolution mapping. Stored for later
-                ``activate`` / ``activate_all``; used immediately when
-                auto-activating.
-            create_tables: Forwarded when activating.
+            create_tables: Forwarded when activating; ``True`` when omitted.
 
         Returns:
             A ``dj.Schema`` instance (unbound unless ``AUTO_ACTIVATE``).
 
         Raises:
-            ValueError: If ``suffix`` is empty.
+            ValueError: If ``suffix`` is empty, or a repeated call passes a
+                ``create_tables`` that differs from the first registration.
         """
         if not suffix:
             raise ValueError("schema suffix must be a non-empty string")
 
-        if suffix in self._entries:
-            return self._entries[suffix].schema
+        entry = self._entries.get(suffix)
+        if entry is not None:
+            if create_tables is not None and create_tables != entry.create_tables:
+                raise ValueError(
+                    f"schema {suffix!r} is already registered with "
+                    f"create_tables={entry.create_tables}"
+                )
+            return entry.schema
 
         schema = dj.Schema()
-        stored_context = dict(context) if context is not None else None
         self._entries[suffix] = _Entry(
             schema=schema,
-            context=stored_context,
-            create_tables=create_tables,
+            create_tables=True if create_tables is None else create_tables,
         )
         if load_settings().auto_activate:
-            return self.activate(
-                suffix,
-                context=stored_context,
-                create_tables=create_tables,
-            )
+            return self.activate(suffix)
         return schema
 
     def activate(
         self,
         suffix: str,
         *,
-        context: Mapping[str, Any] | None = None,
         create_tables: bool | None = None,
         connection: Any | None = None,
     ) -> dj.Schema:
@@ -155,8 +150,6 @@ class SchemaRegistry:
 
         Args:
             suffix: Logical name without prefix (e.g. ``"experiment"``).
-            context: Optional FK resolution mapping; defaults to the mapping
-                stored at registration when omitted.
             create_tables: Forwarded to ``activate_schema``; defaults to the
                 value stored at registration when omitted.
             connection: Optional DataJoint connection forwarded to activate.
@@ -172,12 +165,10 @@ class SchemaRegistry:
         except KeyError as exc:
             raise KeyError(f"unknown schema {suffix!r}") from exc
 
-        resolved_context = entry.context if context is None else context
         resolved_create = entry.create_tables if create_tables is None else create_tables
         return activate_schema(
             entry.schema,
             suffix,
-            context=resolved_context,
             create_tables=resolved_create,
             connection=connection,
         )
@@ -185,19 +176,15 @@ class SchemaRegistry:
     def activate_all(
         self,
         *,
-        context: Mapping[str, Any] | None = None,
         create_tables: bool | None = None,
         connection: Any | None = None,
     ) -> None:
         """Activate every registered schema that is still unbound.
 
-        Skips schemas that already have a ``database`` set. Per-schema context
-        and ``create_tables`` from ``make_schema`` are used unless overridden
-        here (a passed ``context`` is applied to every unbound entry).
+        Skips schemas that already have a ``database`` set. Per-schema
+        ``create_tables`` from ``make_schema`` is used unless overridden here.
 
         Args:
-            context: Shared FK mapping applied to all unbound schemas. When
-                omitted, each entry uses the context stored at registration.
             create_tables: Shared create-tables flag. When omitted, each entry
                 uses the value stored at registration.
             connection: Optional DataJoint connection forwarded to each
@@ -208,7 +195,6 @@ class SchemaRegistry:
                 continue
             self.activate(
                 suffix,
-                context=context,
                 create_tables=create_tables,
                 connection=connection,
             )

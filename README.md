@@ -20,7 +20,7 @@ from base_schemas.core import SCENE_REGISTRY, activate_schema, load_settings
 
 schema = SCENE_REGISTRY.make_schema("experiment")  # unbound unless AUTO_ACTIVATE
 # @schema class Lab ...
-SCENE_REGISTRY.activate("experiment")  # uses context stored at make_schema
+SCENE_REGISTRY.activate("experiment")  # uses create_tables stored at make_schema
 SCENE_REGISTRY.activate_all()
 
 # Or bind any dj.Schema without the registry:
