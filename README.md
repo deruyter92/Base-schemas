@@ -123,6 +123,15 @@ from base_schemas.ingestion.provenance import DuplicatePolicy
 ensure_lab({"lab_id": "mlai", "lab_name": "Mathis Lab"}, if_exists=DuplicatePolicy.VERIFY)
 ```
 
+### Design rule: one transaction per write
+
+A function that writes to more than one table performs all of its writes
+inside a single transaction (``atomic``). Nothing else happens inside it: no
+file reading, no computation, no schema activation. Read and validate the
+input first, then write. This keeps a failed write from leaving partial rows,
+and keeps transactions (and their locks) short. The insertion helpers follow
+this rule; ingestion code built on them (e.g. a manifest loader) should too.
+
 ## Table markers
 
 Two optional markers record intent; they enforce nothing. Read them with
