@@ -4,6 +4,7 @@ import datajoint as dj
 
 from base_schemas.core.access_markers import WriteRole, mark_write_role
 from base_schemas.schemas.scene._schema import schema
+from base_schemas.schemas.scene.lab import Lab  # noqa: F401  # FK: Subject -> Lab
 
 
 @schema
@@ -28,10 +29,19 @@ class SubjectKind(dj.Lookup):
 @mark_write_role(WriteRole.ACQUISITION)
 @schema
 class Subject(dj.Manual):
-    """Lab-agnostic individual identity (human, mouse, other)."""
+    """Individual identity (human, mouse, other), registered by one lab.
+
+    ``subject_id`` is minted by ``register_subject``; the lab refers to the
+    subject by ``subject_code``, which is unique within that lab. The code is
+    a pseudonym: never a real name, initials, birth date or other identifying
+    information (it is shared with the consortium).
+    """
 
     definition = """
-    subject_id: varchar(64)  # opaque stable token; never renamed
+    subject_id: varchar(64)  # minted UUID4 hex; never renamed
     ---
+    -> Lab
+    subject_code: varchar(64)  # pseudonymous lab code, e.g. P012; never a real name
     -> SubjectKind
+    unique index (lab_id, subject_code)
     """

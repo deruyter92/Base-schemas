@@ -26,16 +26,22 @@ class Experimenter(dj.Manual):
 @mark_write_role(WriteRole.ACQUISITION)
 @schema
 class Session(dj.Manual):
-    """One data-collection session within a lab."""
+    """One data-collection session within a lab.
+
+    ``session_id`` is minted by ``register_session``; the lab refers to the
+    session by ``session_code``, which is unique within that lab. Like
+    ``subject_code``, it must not contain identifying information.
+    """
 
     definition = """
     -> Lab
-    session_id: varchar(64)  # stable token; never renamed
+    session_id: varchar(64)  # minted UUID4 hex; never renamed
     ---
-    session_name: varchar(128)  # user-facing label
+    session_code: varchar(128)  # pseudonymous lab code; never a real name
     session_date: date
     -> [nullable] Task
     -> [nullable] Experimenter
+    unique index (lab_id, session_code)
     """
 
     class Subject(dj.Part):  # noqa: F811

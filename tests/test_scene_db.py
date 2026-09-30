@@ -41,7 +41,7 @@ def test_lab_session_insert_roundtrip(dj_connection):
         {
             **lab_key,
             "session_id": session_id,
-            "session_name": "test session",
+            "session_code": "test-session",
             "session_date": dt.date(2026, 1, 15),
         },
         skip_duplicates=True,
@@ -70,14 +70,11 @@ def test_subject_task_and_multi_subject_session(dj_connection):
     )
     assert len(SubjectKind()) >= 1
 
-    Subject.insert1(
-        {"subject_id": "11111111111111111111111111111111", "subject_kind": "mouse"},
-        skip_duplicates=True,
-    )
-    Subject.insert1(
-        {"subject_id": "22222222222222222222222222222222", "subject_kind": "mouse"},
-        skip_duplicates=True,
-    )
+    for sid, name in (("1" * 32, "spine-1"), ("2" * 32, "spine-2")):
+        Subject.insert1(
+            {"subject_id": sid, **lab_key, "subject_code": name, "subject_kind": "mouse"},
+            skip_duplicates=True,
+        )
     Task.insert1(
         {"task_name": "gaze_v1", "task_title": "Gaze tracking"},
         skip_duplicates=True,
@@ -94,7 +91,7 @@ def test_subject_task_and_multi_subject_session(dj_connection):
     ]
     session = {
         **session_key,
-        "session_name": "multi-subject run",
+        "session_code": "multi-subject-run",
         "session_date": dt.date(2026, 6, 1),
         "task_name": "gaze_v1",
         "experimenter_name": "alice",
@@ -115,7 +112,8 @@ def test_subject_task_and_multi_subject_session(dj_connection):
 def test_register_session_mints_id_and_stores_name(dj_connection, monkeypatch):
     from base_schemas.core.hash import content_hash
     from base_schemas.ingestion import SCENE_WRITER_VERSION, register_session
-    from base_schemas.ingestion.register.session import session_etag_payload
+    from base_schemas.ingestion.provenance import DuplicatePolicy
+    from base_schemas.ingestion.register.session import session_meta_payload
     from base_schemas.schemas.provenance.row_meta import SessionRowMeta
     from base_schemas.schemas.scene.lab import Lab
     from base_schemas.schemas.scene.session import Experimenter, Session
@@ -132,7 +130,7 @@ def test_register_session_mints_id_and_stores_name(dj_connection, monkeypatch):
     )
     subject_id = "33333333333333333333333333333333"
     Subject.insert1(
-        {"subject_id": subject_id, "subject_kind": "mouse"},
+        {"subject_id": subject_id, **lab_key, "subject_code": "reg-1", "subject_kind": "mouse"},
         skip_duplicates=True,
     )
     Task.insert1(
@@ -146,7 +144,7 @@ def test_register_session_mints_id_and_stores_name(dj_connection, monkeypatch):
 
     session_date = dt.date(2026, 5, 1)
     key = register_session(
-        "Morning run",
+        "morning-run",
         session_date,
         lab=lab_key,
         subjects=[{"subject_id": subject_id}],
@@ -156,15 +154,44 @@ def test_register_session_mints_id_and_stores_name(dj_connection, monkeypatch):
     assert key["lab_id"] == "reglab"
     assert len(key["session_id"]) == 32
     row = (Session & key).fetch1()
-    assert row["session_name"] == "Morning run"
+    assert row["session_code"] == "morning-run"
     assert row["session_date"] == session_date
     assert row["task_name"] == "reg_task"
     assert row["experimenter_name"] == "reg_user"
     assert list((Session.Subject & key).fetch("subject_id")) == [subject_id]
     meta = (SessionRowMeta & key).fetch1()
     assert meta["ingestion_version"] == SCENE_WRITER_VERSION
-    assert meta["content_hash"] == content_hash(session_etag_payload(row, [subject_id]))
+    assert meta["content_hash"] == content_hash(session_meta_payload(row, [subject_id]))
     assert meta["deployment_id"] == os.environ["SCENE_DEPLOYMENT_ID"]
+
+    # Same name + same content: VERIFY (default) returns the stored session.
+    again = register_session(
+        "morning-run",
+        session_date,
+        lab=lab_key,
+        subjects=[{"subject_id": subject_id}],
+        task={"task_name": "reg_task"},
+        experimenter={"experimenter_name": "reg_user"},
+    )
+    assert again == key
+    assert len(Session & {**lab_key, "session_code": "morning-run"}) == 1
+    with pytest.raises(ValueError, match="different content hash"):
+        register_session("morning-run", dt.date(2026, 5, 2), lab=lab_key)
+
+    # UPDATE keeps the id, rewrites the row and stamp, and replaces the subject links.
+    with pytest.warns(UserWarning, match="content hash changed"):
+        updated = register_session(
+            "morning-run",
+            dt.date(2026, 5, 2),
+            lab=lab_key,
+            if_exists=DuplicatePolicy.UPDATE,
+        )
+    assert updated == key
+    assert (Session & key).fetch1("session_date") == dt.date(2026, 5, 2)
+    assert len(Session.Subject & key) == 0
+    assert (SessionRowMeta & key).fetch1("content_hash") == content_hash(
+        session_meta_payload((Session & key).fetch1(), [])
+    )
 
 
 def test_ensure_lab_duplicate_policy_roundtrip(dj_connection, monkeypatch):
@@ -206,8 +233,9 @@ def test_ensure_lab_duplicate_policy_roundtrip(dj_connection, monkeypatch):
     assert len(LabRowMeta & lab_key) == 1
 
 
-def test_register_session_with_new_subjects_shares_one_transaction(dj_connection, monkeypatch):
-    from base_schemas.ingestion import register_session_with_new_subjects
+def test_register_subjects_and_session_in_one_transaction(dj_connection, monkeypatch):
+    from base_schemas.core.db import atomic
+    from base_schemas.ingestion import register_session, register_subject
     from base_schemas.schemas.provenance.row_meta import SessionRowMeta, SubjectRowMeta
     from base_schemas.schemas.scene.lab import Lab
     from base_schemas.schemas.scene.session import Session
@@ -216,21 +244,33 @@ def test_register_session_with_new_subjects_shares_one_transaction(dj_connection
     monkeypatch.setenv("SCENE_DEPLOYMENT_ID", "test-local")
     lab_key = {"lab_id": "txnlab"}
     Lab.insert1({**lab_key, "lab_name": "Txn Lab", "institution": "Test U"}, skip_duplicates=True)
-    subject_ids = ["4" * 32, "5" * 32]
 
-    key = register_session_with_new_subjects(
-        "nested txn",
-        dt.date(2026, 8, 1),
-        lab=lab_key,
-        subjects=[{"subject_id": sid, "subject_kind": "mouse"} for sid in subject_ids],
-    )
+    def register_all(session_code: str):
+        with atomic(Session.connection):
+            subjects = [register_subject(code, "mouse", lab=lab_key) for code in ("txn-1", "txn-2")]
+            return register_session(
+                session_code, dt.date(2026, 8, 1), lab=lab_key, subjects=subjects
+            )
 
-    assert set((Session.Subject & key).fetch("subject_id")) == set(subject_ids)
+    key = register_all("nested-txn")
+
+    subject_ids = set((Subject & lab_key).fetch("subject_id"))
+    assert len(subject_ids) == 2
+    assert set((Session.Subject & key).fetch("subject_id")) == subject_ids
     assert len(SessionRowMeta & key) == 1
     for sid in subject_ids:
-        assert len(Subject & {"subject_id": sid}) == 1
         assert len(SubjectRowMeta & {"subject_id": sid}) == 1
     assert not Session.connection.in_transaction
+
+    # Re-running the same registration reuses every minted id.
+    assert register_all("nested-txn") == key
+    assert len(Subject & lab_key) == 2
+
+    # A failure inside the block rolls back the subjects registered before it.
+    with pytest.raises(ValueError, match="session_code"), atomic(Session.connection):
+        register_subject("txn-3", "mouse", lab=lab_key)
+        register_session("not a code", dt.date(2026, 8, 1), lab=lab_key)
+    assert not (Subject & {**lab_key, "subject_code": "txn-3"})
 
 
 def test_ensure_schema_version_idempotent_then_assert(dj_connection):

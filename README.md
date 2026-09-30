@@ -58,56 +58,62 @@ accounts SELECT only) and are created with the helpers in
 (acquisition accounts only). They are inserted locally by one team and later
 shared with the consortium. Helpers live in ``base_schemas.ingestion``:
 
-- ``register_subject`` — insert a subject row, return its key
-- ``register_session`` — link **existing** subject keys (may be empty)
-- ``register_session_with_new_subjects`` — insert subject rows, then register
-  the session (one transaction)
+- ``register_subject`` — register a subject by code, return its key
+- ``register_session`` — register a session by code, linking **existing**
+  subject keys (may be empty)
 
-``session_name`` is chosen by the pipeline user; the globally unique
-``session_id`` is minted by the helper (UUID4 hex), so every call registers a
-new session.
+Subjects and sessions are identified by a code the lab chooses
+(``subject_code``, ``session_code``), unique within the lab. The globally
+unique ``subject_id`` / ``session_id`` is minted by the helper (UUID4 hex) the
+first time a code is registered. Registering the same code again reuses the
+stored id, so re-running an ingestion does not create duplicates.
+
+Codes are shared with the consortium, so they must be **pseudonyms**: never a
+real name, initials, birth date or other identifying information. The helpers
+accept only ASCII letters, digits, ``.``, ``_`` and ``-`` (no spaces), which
+rejects free-text names but cannot catch every identifying code.
 
 ```python
 from datetime import date
-from base_schemas.ingestion import (
-    new_subject_id,
-    register_session,
-    register_session_with_new_subjects,
-    register_subject,
-)
+from base_schemas.ingestion import register_session, register_subject
 
-# Existing subjects only:
+lab = {"lab_id": "mlai"}
+subject = register_subject("mouse-042", "mouse", lab=lab)
 register_session(
     "mousear-session-015",
     date(2026, 5, 1),
-    lab={"lab_id": "mlai"},
-    subjects=[{"subject_id": "a" * 32}],
+    lab=lab,
+    subjects=[subject],
     task={"task_name": "gaze_v1"},
-)
-
-# Create subjects + session together:
-register_session_with_new_subjects(
-    "mousear-session-016",
-    date(2026, 5, 2),
-    lab={"lab_id": "mlai"},
-    subjects=[
-        {"subject_id": new_subject_id(), "subject_kind": "mouse"},
-    ],
 )
 ```
 
-### Re-inserting an existing primary key
+Each helper is atomic and joins a transaction that is already open. To make
+several registrations all-or-nothing, wrap them in ``atomic``:
 
-Soe registration helpers take ``if_exists: DuplicatePolicy`` to control the policy
-for existing entries. Unlike DataJoint's ``skip_duplicates`` / ``replace``, this
-policy compares the ``content_hash`` in the stored stamp, detecting changed content:
+```python
+from base_schemas.core import atomic
+from base_schemas.schemas.scene.session import Session
 
-| Policy | When the primary key already exists |
-|--------|-------------------------------------|
+with atomic(Session.connection):
+    subjects = [register_subject(code, "mouse", lab=lab) for code in ("mouse-043", "mouse-044")]
+    register_session("mousear-session-016", date(2026, 5, 2), lab=lab, subjects=subjects)
+```
+
+### Registering an existing entry again
+
+The helpers take ``if_exists: DuplicatePolicy`` to control what happens when
+the entry already exists (same primary key for ``ensure_*``, same code within
+the lab for ``register_*``). Unlike DataJoint's ``skip_duplicates`` /
+``replace``, this policy compares the ``content_hash`` in the stored stamp,
+detecting changed content:
+
+| Policy | When the entry already exists |
+|--------|-------------------------------|
 | ``REJECT`` (default for ``ensure_*``) | raise ``ValueError`` |
-| ``SKIP`` (default for subjects) | leave row and stamp untouched |
-| ``VERIFY`` | leave untouched when the stamp hash matches; raise when it differs or no stamp exists |
-| ``UPDATE`` | ``update1`` the row and its stamp; warn when the hash changed |
+| ``SKIP`` | leave row and stamp untouched |
+| ``VERIFY`` (default for ``register_*``) | leave untouched when the stamp hash matches; raise when it differs or no stamp exists |
+| ``UPDATE`` | ``update1`` the row and its stamp (sessions: also their subject links); warn when the hash changed |
 
 ```python
 from base_schemas.ingestion.admin import ensure_lab
@@ -115,9 +121,6 @@ from base_schemas.ingestion.provenance import DuplicatePolicy
 
 ensure_lab({"lab_id": "mlai", "lab_name": "Mathis Lab"}, if_exists=DuplicatePolicy.VERIFY)
 ```
-
-All helpers run atomically and join the caller's DataJoint transaction when
-one is already open.
 
 ## Table markers
 

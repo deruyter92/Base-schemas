@@ -63,7 +63,7 @@ def test_tracked_key_returns_only_primary_key_fields() -> None:
     row = {
         "lab_id": "mlai",
         "session_id": "abc",
-        "session_name": "morning",
+        "session_code": "morning",
     }
     assert tracked_key(_Meta, row) == {"lab_id": "mlai", "session_id": "abc"}
 
