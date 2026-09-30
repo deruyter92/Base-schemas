@@ -6,8 +6,8 @@ process.
 Environment
 -----------
 DJ_SCHEMA_PREFIX
-    Prefix for every schema name. By convention include the trailing
-    underscore (e.g. ``dev_`` → ``dev_experiment``).
+    Prefix for every schema name; empty, or ending in an underscore
+    (e.g. ``dev_`` → ``dev_experiment``).
 AUTO_ACTIVATE
     Opt-in eager bind. If unset/false (default), schemas stay unbound until
     ``activate_schema`` / ``SCENE_REGISTRY.activate`` — no DB required on
@@ -47,8 +47,10 @@ def load_settings() -> Settings:
     """Resolve settings from the environment. Pure: no mutation, no caching."""
     prefix = (os.environ.get("DJ_SCHEMA_PREFIX") or "").strip()
     if not _PREFIX_RE.fullmatch(prefix):
+        raise ValueError(f"Invalid DJ_SCHEMA_PREFIX {prefix!r}: must match [A-Za-z0-9_]*")
+    if prefix and not prefix.endswith("_"):
         raise ValueError(
-            f"Invalid DJ_SCHEMA_PREFIX {prefix!r}: must match [A-Za-z0-9_]* "
-            "(typically ending in '_')"
+            f"Invalid DJ_SCHEMA_PREFIX {prefix!r}: must end with '_' "
+            f"(e.g. {prefix + '_'!r} → {prefix + '_experiment'!r})"
         )
     return Settings(prefix=prefix, auto_activate=_env_flag("AUTO_ACTIVATE"))

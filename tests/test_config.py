@@ -27,6 +27,12 @@ def test_schema_prefix_rejects_invalid(monkeypatch):
         load_settings()
 
 
+def test_schema_prefix_requires_trailing_underscore(monkeypatch):
+    monkeypatch.setenv("DJ_SCHEMA_PREFIX", "dev")
+    with pytest.raises(ValueError, match="must end with '_'"):
+        load_settings()
+
+
 def test_db_name_rejects_empty_suffix(monkeypatch):
     monkeypatch.delenv("DJ_SCHEMA_PREFIX", raising=False)
     with pytest.raises(ValueError, match="non-empty"):
