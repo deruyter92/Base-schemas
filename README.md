@@ -10,13 +10,15 @@ Current package schemas (placeholders; definitions may change):
 - `base_schemas.schemas.scene.task` — `Task`
 - `base_schemas.schemas.scene.session` — `Experimenter`, `Session`
 - `base_schemas.schemas.provenance.deployment` — `Deployment`
-- `base_schemas.schemas.provenance.row_meta` — `SessionRowMeta`
+- `base_schemas.schemas.provenance.row_meta` — `LabRowMeta`, `TaskRowMeta`,
+  `SubjectRowMeta`, `SessionRowMeta` (one stamp per tracked row: deployment,
+  writer version, content hash)
 
 Also included:
 
 - `base_schemas.scripts.sync` — copy table rows between servers
 - `base_schemas.ingestion` — supported write path (`register_session`, …);
-- `base_schemas.admin` — catalog ensures (`ensure_lab`, `ensure_task`; admin DB role);
+- `base_schemas.ingestion.admin` — catalog ensures (`ensure_lab`, `ensure_task`; admin DB role);
 
 ### Register subjects and sessions
 
