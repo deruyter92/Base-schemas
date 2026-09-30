@@ -5,9 +5,11 @@ Placeholder — table definitions are subject to change.
 
 import datajoint as dj
 
+from base_schemas.core.access_markers import SyncAuthority, mark_sync_authority
 from base_schemas.schemas.provenance._schema import schema
 
 
+@mark_sync_authority(SyncAuthority.SHARED)
 @schema
 class Deployment(dj.Manual):
     """Logical DB/instance/dataset identity for write provenance.

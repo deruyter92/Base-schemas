@@ -43,8 +43,9 @@ may change, the id must not. The label is free text for humans and may change.
 ### Admin catalog tables
 
 ``Lab`` and ``Task`` are catalog tables shared across the collaboration. They
-are marked ``AccessRole.ADMIN_WRITE`` (pipeline users SELECT only) and are
-created with the helpers in ``base_schemas.ingestion.admin``:
+are marked ``SyncAuthority.CENTRAL`` and ``WriteRole.ADMIN`` (acquisition
+accounts SELECT only) and are created with the helpers in
+``base_schemas.ingestion.admin``:
 
 - ``ensure_lab`` — insert a lab row, return its key
 - ``ensure_task`` — insert a task row, return its key
@@ -53,8 +54,8 @@ created with the helpers in ``base_schemas.ingestion.admin``:
 
 ### Pipeline writes
 
-``Subject`` and ``Session`` are everyday writes, marked
-``AccessRole.PIPELINE_WRITE``. They are inserted locally by one team and later
+``Subject`` and ``Session`` are everyday writes, marked ``WriteRole.ACQUISITION``
+(acquisition accounts only). They are inserted locally by one team and later
 shared with the consortium. Helpers live in ``base_schemas.ingestion``:
 
 - ``register_subject`` — insert a subject row, return its key
@@ -117,6 +118,23 @@ ensure_lab({"lab_id": "mlai", "lab_name": "Mathis Lab"}, if_exists=DuplicatePoli
 
 All helpers run atomically and join the caller's DataJoint transaction when
 one is already open.
+
+## Table markers
+
+Two optional markers record intent; they enforce nothing. Read them with
+``sync_authority_of`` and ``write_role_of``.
+
+``SyncAuthority`` names which database holds the truth: ``CENTRAL`` (consortium
+catalogs; central wins a conflict), ``ORIGIN`` (the deployment in the row's
+stamp wins), ``SHARED`` (append-only, either direction inserts and never
+overwrites; ``Deployment``). Unmarked means ``ORIGIN``. ``Deployment`` is
+``SHARED``.
+
+``WriteRole`` restricts INSERT: ``ADMIN`` or ``ACQUISITION``, and a marker
+admits only that role. No marker means unrestricted. ``Lab`` and ``Task`` are
+``ADMIN``; ``Subject`` and ``Session`` are ``ACQUISITION``. A part follows its
+master and a row-meta table follows the table it tracks, so those need no
+marker of their own. Lab-defined tables need none either.
 
 ## Schema activation
 

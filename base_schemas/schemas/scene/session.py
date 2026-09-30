@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datajoint as dj
 
-from base_schemas.core.access_markers import AccessRole, mark_access_role
+from base_schemas.core.access_markers import WriteRole, mark_write_role
 from base_schemas.schemas.scene._schema import schema
 from base_schemas.schemas.scene.lab import Lab  # noqa: F401  # FK: Session -> Lab
 from base_schemas.schemas.scene.subject import Subject  # noqa: F401
@@ -23,7 +23,7 @@ class Experimenter(dj.Manual):
     """
 
 
-@mark_access_role(AccessRole.PIPELINE_WRITE)
+@mark_write_role(WriteRole.ACQUISITION)
 @schema
 class Session(dj.Manual):
     """One data-collection session within a lab."""

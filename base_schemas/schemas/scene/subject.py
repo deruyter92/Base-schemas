@@ -2,7 +2,7 @@
 
 import datajoint as dj
 
-from base_schemas.core.access_markers import AccessRole, mark_access_role
+from base_schemas.core.access_markers import WriteRole, mark_write_role
 from base_schemas.schemas.scene._schema import schema
 
 
@@ -25,7 +25,7 @@ class SubjectKind(dj.Lookup):
     ]
 
 
-@mark_access_role(AccessRole.PIPELINE_WRITE)
+@mark_write_role(WriteRole.ACQUISITION)
 @schema
 class Subject(dj.Manual):
     """Lab-agnostic individual identity (human, mouse, other)."""
