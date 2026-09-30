@@ -87,6 +87,25 @@ class _FakeMeta(_FakeTable):
         return {name: row[name] for name in self.tracked_table.primary_key}
 
 
+class _FakePart:
+    """Part table stand-in: rows as a list, delete_quick by master restriction."""
+
+    def __init__(self, rows=()):
+        self.rows = [dict(row) for row in rows]
+
+    def insert(self, rows):
+        self.rows.extend(dict(row) for row in rows)
+
+    def __and__(self, key):
+        part = self
+
+        class _Restricted:
+            def delete_quick(self):
+                part.rows = [r for r in part.rows if any(r[k] != v for k, v in key.items())]
+
+        return _Restricted()
+
+
 def _stamp(payload=_PAYLOAD, **overrides):
     return {
         **_LAB_KEY,
@@ -232,3 +251,26 @@ def test_unknown_policy_is_rejected(deployment_table):
     _, meta = _tables(lab_exists=True)
     with pytest.raises(ValueError, match="unknown DuplicatePolicy"):
         _insert(meta, "bogus")
+
+
+def test_parts_are_inserted_with_a_new_row(deployment_table):
+    _, meta = _tables(lab_exists=False)
+    part = _FakePart()
+    _insert(meta, DuplicatePolicy.REJECT, parts={part: [{"member": "a"}, {"member": "b"}]})
+    assert part.rows == [{**_LAB_KEY, "member": "a"}, {**_LAB_KEY, "member": "b"}]
+
+
+def test_update_replaces_parts_of_this_row_only(deployment_table):
+    _, meta = _tables(lab_exists=True, stamp=_stamp())
+    other = {"lab_id": "other", "member": "x"}
+    part = _FakePart([{**_LAB_KEY, "member": "old"}, other])
+    _insert(meta, DuplicatePolicy.UPDATE, parts={part: [{"member": "new"}]})
+    assert part.rows == [other, {**_LAB_KEY, "member": "new"}]
+
+
+@pytest.mark.parametrize("policy", [DuplicatePolicy.SKIP, DuplicatePolicy.VERIFY])
+def test_parts_untouched_when_row_is_kept(deployment_table, policy):
+    _, meta = _tables(lab_exists=True, stamp=_stamp())
+    part = _FakePart([{**_LAB_KEY, "member": "old"}])
+    _insert(meta, policy, parts={part: [{"member": "new"}]})
+    assert part.rows == [{**_LAB_KEY, "member": "old"}]

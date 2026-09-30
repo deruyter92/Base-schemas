@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import enum
 import warnings
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any
+
+import datajoint as dj
 
 from base_schemas.core.db import atomic
 from base_schemas.core.hash import content_hash
@@ -27,7 +30,8 @@ class DuplicatePolicy(str, enum.Enum):
         SKIP: Leave the stored row and its stamp untouched.
         VERIFY: Leave the stored row untouched when the stamp hash matches
             ``payload``; raise ``ValueError`` when it differs or no stamp exists.
-        UPDATE: Update the row and its stamp; warn when the hash changed.
+        UPDATE: Update the row (and replace the given parts) and its stamp;
+            warn when the hash changed.
     """
 
     REJECT = "reject"
@@ -43,14 +47,17 @@ def insert_tracked_row(
     payload: dict[str, Any],
     deployment: DjRow[Deployment],
     if_exists: DuplicatePolicy,
+    parts: Mapping[type[dj.Part], Sequence[DjRow]] | None = None,
     writer_version: str | None = None,
 ) -> DjKey:
     """Insert ``row`` into ``row_meta_table.tracked_table`` and stamp it.
 
     A new primary key is inserted and stamped. An existing primary key is
-    handled by ``if_exists``. The ``Deployment`` row is inserted when missing.
-    All statements run atomically: inside the caller's open transaction when
-    there is one, otherwise in a transaction opened here.
+    handled by ``if_exists``. ``parts`` are written whenever the row is: inserted
+    with a new row, replaced on ``UPDATE``, and left untouched otherwise. The
+    ``Deployment`` row is inserted when missing. All statements run atomically:
+    inside the caller's open transaction when there is one, otherwise in a
+    transaction opened here.
 
     Args:
         row_meta_table: Row-meta table; its ``tracked_table`` receives ``row``.
@@ -58,6 +65,9 @@ def insert_tracked_row(
         payload: Fields hashed into ``content_hash`` (caller-defined shape).
         deployment: Deployment row to stamp with.
         if_exists: Policy when the tracked primary key already exists.
+        parts: Optional part rows per part table, without the master key
+            (it is added here), e.g. ``{Session.Subject: [{"subject_id": ...}]}``.
+            Include them in ``payload`` so the hash covers them.
         writer_version: Stamped ``ingestion_version``; ``SCENE_WRITER_VERSION``
             when omitted.
 
@@ -81,6 +91,7 @@ def insert_tracked_row(
         if not (tracked_table & row_key):
             Deployment.insert1(deployment, skip_duplicates=True)
             tracked_table.insert1(row)
+            _insert_parts(parts, row_key)
             row_meta_table.insert1(stamp)
             return row_key
 
@@ -96,11 +107,21 @@ def insert_tracked_row(
 
         Deployment.insert1(deployment, skip_duplicates=True)
         tracked_table.update1(row)
+        for part_table in parts or {}:
+            (part_table & row_key).delete_quick()
+        _insert_parts(parts, row_key)
         if stored_hash is None:
             row_meta_table.insert1(stamp)
         else:
             row_meta_table.update1(stamp)
         return row_key
+
+
+def _insert_parts(parts: Mapping[type[dj.Part], Sequence[DjRow]] | None, row_key: DjKey) -> None:
+    """Insert each part table's rows under the master ``row_key``."""
+    for part_table, part_rows in (parts or {}).items():
+        if part_rows:
+            part_table.insert([{**row_key, **part_row} for part_row in part_rows])
 
 
 def _stored_hash(row_meta_table: type[RowMetaBase], row_key: DjKey) -> str | None:
