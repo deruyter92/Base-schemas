@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import enum
 import warnings
-from contextlib import nullcontext
 from datetime import datetime, timezone
 from typing import Any
 
-import datajoint as dj
-
+from base_schemas.core.db import atomic
 from base_schemas.core.hash import content_hash
 from base_schemas.core.types import DjKey, DjRow
 from base_schemas.ingestion.provenance.ingestion_version import SCENE_WRITER_VERSION
@@ -79,7 +77,7 @@ def insert_tracked_row(
         "updated_at": datetime.now(timezone.utc).replace(tzinfo=None),
     }
 
-    with _transaction(tracked_table.connection):
+    with atomic(tracked_table.connection):
         if not (tracked_table & row_key):
             Deployment.insert1(deployment, skip_duplicates=True)
             tracked_table.insert1(row)
@@ -103,11 +101,6 @@ def insert_tracked_row(
         else:
             row_meta_table.update1(stamp)
         return row_key
-
-
-def _transaction(connection: dj.Connection):
-    """Open a transaction, or join the one already open (DataJoint cannot nest)."""
-    return nullcontext() if connection.in_transaction else connection.transaction
 
 
 def _stored_hash(row_meta_table: type[RowMetaBase], row_key: DjKey) -> str | None:

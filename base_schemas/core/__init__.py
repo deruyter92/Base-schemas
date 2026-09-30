@@ -9,6 +9,7 @@ from base_schemas.core.access_markers import (
     write_role_of,
 )
 from base_schemas.core.config import Settings, deployment_row_from_settings, load_settings
+from base_schemas.core.db import atomic, lookup_key, new_id
 from base_schemas.core.hash import content_hash
 from base_schemas.core.registry import SCENE_REGISTRY, SchemaRegistry, activate_schema
 from base_schemas.core.types import DjKey, DjRow
@@ -32,6 +33,7 @@ __all__ = [
     "SyncAuthority",
     "WriteRole",
     "activate_schema",
+    "atomic",
     "assert_schema_compatible",
     "check_schema_version",
     "content_hash",
@@ -39,6 +41,8 @@ __all__ = [
     "ensure_schema_version",
     "get_db_schema_version",
     "load_settings",
+    "lookup_key",
+    "new_id",
     "mark_sync_authority",
     "mark_write_role",
     "sync_authority_of",
