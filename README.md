@@ -20,19 +20,51 @@ Also included:
 - `base_schemas.ingestion` — supported write path (`register_session`, …);
 - `base_schemas.ingestion.admin` — catalog ensures (`ensure_lab`, `ensure_task`; admin DB role);
 
-### Register subjects and sessions
+## Inserting rows
 
-``Lab`` / ``Task`` are admin catalog tables — create with ``ensure_lab`` /
-``ensure_task`` (admin DB role). ``Experimenter`` is still a shared lookup;
-seed it directly or via a future admin helper. Subjects are everyday writes:
+Write through the helpers in ``base_schemas.ingestion`` rather than calling
+``insert1`` directly. Every helper writes the row and a row-meta stamp
+(``LabRowMeta``, ``SessionRowMeta``, …) that records which deployment wrote
+it, the ``SCENE_WRITER_VERSION``, and a ``content_hash`` of the row's content.
+The stamps are what later lets rows be compared and synced between databases.
+
+### Deployment id and label
+
+Set ``SCENE_DEPLOYMENT_ID`` once per database (optional
+``SCENE_DEPLOYMENT_LABEL``). The helpers read it when ``deployment`` is not
+passed explicitly, and insert the matching ``Deployment`` row on first use.
+
+The id is a stable, opaque token: pick a short slug that names the lab and the
+role of the database, e.g. ``mlai-prod`` for the production database of the
+Mathis Lab of Adaptive Intelligence, or ``mlai-dev-jaap`` for a private
+development copy. Do not derive it from a hostname or the schema prefix; those
+may change, the id must not. The label is free text for humans and may change.
+
+### Admin catalog tables
+
+``Lab`` and ``Task`` are catalog tables shared across the collaboration. They
+are marked ``AccessRole.ADMIN_WRITE`` (pipeline users SELECT only) and are
+created with the helpers in ``base_schemas.ingestion.admin``:
+
+- ``ensure_lab`` — insert a lab row, return its key
+- ``ensure_task`` — insert a task row, return its key
+
+``Experimenter`` is still a plain shared lookup; seed it directly.
+
+### Pipeline writes
+
+``Subject`` and ``Session`` are everyday writes, marked
+``AccessRole.PIPELINE_WRITE``. They are inserted locally by one team and later
+shared with the consortium. Helpers live in ``base_schemas.ingestion``:
 
 - ``register_subject`` — insert a subject row, return its key
 - ``register_session`` — link **existing** subject keys (may be empty)
 - ``register_session_with_new_subjects`` — insert subject rows, then register
   the session (one transaction)
 
-Set ``SCENE_DEPLOYMENT_ID`` once (optional ``SCENE_DEPLOYMENT_LABEL``).
-``session_id`` is always minted (UUID4 hex).
+``session_name`` is chosen by the pipeline user; the globally unique
+``session_id`` is minted by the helper (UUID4 hex), so every call registers a
+new session.
 
 ```python
 from datetime import date
@@ -63,6 +95,29 @@ register_session_with_new_subjects(
 )
 ```
 
+### Re-inserting an existing primary key
+
+Soe registration helpers take ``if_exists: DuplicatePolicy`` to control the policy
+for existing entries. Unlike DataJoint's ``skip_duplicates`` / ``replace``, this
+policy compares the ``content_hash`` in the stored stamp, detecting changed content:
+
+| Policy | When the primary key already exists |
+|--------|-------------------------------------|
+| ``REJECT`` (default for ``ensure_*``) | raise ``ValueError`` |
+| ``SKIP`` (default for subjects) | leave row and stamp untouched |
+| ``VERIFY`` | leave untouched when the stamp hash matches; raise when it differs or no stamp exists |
+| ``UPDATE`` | ``update1`` the row and its stamp; warn when the hash changed |
+
+```python
+from base_schemas.ingestion.admin import ensure_lab
+from base_schemas.ingestion.provenance import DuplicatePolicy
+
+ensure_lab({"lab_id": "mlai", "lab_name": "Mathis Lab"}, if_exists=DuplicatePolicy.VERIFY)
+```
+
+All helpers run atomically and join the caller's DataJoint transaction when
+one is already open.
+
 ## Schema activation
 
 Schemas stay unbound by default (no DB needed on import). Set
@@ -91,8 +146,8 @@ SCENE_REGISTRY.get("scene") is schema
 |----------|---------|
 | `DJ_SCHEMA_PREFIX` | Prefix for DB names (include trailing `_`) |
 | `AUTO_ACTIVATE` | If truthy, `make_schema` / Lab / Session bind on import |
-| `SCENE_DEPLOYMENT_ID` | Default deployment stamp for `register_session` |
-| `SCENE_DEPLOYMENT_LABEL` | Optional label when using the env default |
+| `SCENE_DEPLOYMENT_ID` | Stable id of this database; default `deployment` for all insertion helpers |
+| `SCENE_DEPLOYMENT_LABEL` | Optional human label stored on `Deployment` with the env default |
 
 ## Installation
 

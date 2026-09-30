@@ -14,8 +14,8 @@ AUTO_ACTIVATE
     import (see SCENE-Collaboration/Base-schemas#8). If truthy, ``make_schema``
     and table modules that honor this setting bind immediately.
 SCENE_DEPLOYMENT_ID
-    Opaque stable id for this DB/instance/dataset. Default for
-    ``register_session`` when ``deployment`` is omitted.
+    Stable id of this database, e.g. ``mlai-prod``. Default ``deployment`` for
+    the insertion helpers when the argument is omitted.
 SCENE_DEPLOYMENT_LABEL
     Optional human label stored on ``Deployment`` when using the env default.
 """
